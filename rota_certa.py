@@ -7,11 +7,11 @@ from telegram.ext import (
     ContextTypes,
 )
 from waitress import serve
-import requests, json, asyncio, threading
+import requests, json, asyncio, threading, uuid
 
 # 🔐 Tokens
-ACCESS_TOKEN = "APP_USR-264234346131232-071723-2b11d40f943d9721d869863410833122-777482543"  # Substitua pelo seu token do Mercado Pago
-BOT_TOKEN = "8095673432:AAEOd6Sceqa7ClwP36bg7kPlu64fPWSvN2w"  # Substitua pelo seu token do Telegram
+ACCESS_TOKEN = "APP_USR-264234346131232-071723-2b11d40f943d9721d869863410833122-777482543"
+BOT_TOKEN = "8095673432:AAG8YrbG1J9zUmoz3-u_J1kV6yA9M1Vt8ec"  # Substitua pelo seu token do Telegram
 
 # 🧠 Dados locais
 usuarios = {}
@@ -123,7 +123,10 @@ async def processar_escolha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     valor = dados["valor"]
 
     url = "https://api.mercadopago.com/v1/payments"
-    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "X-Idempotency-Key": str(uuid.uuid4())
+    }
     payload = {
         "transaction_amount": valor,
         "description": f"{quantidade} créditos Rota Certa",
