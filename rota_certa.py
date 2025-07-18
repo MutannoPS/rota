@@ -40,23 +40,27 @@ def webhook_pix():
         dados = request.get_json(force=True)
         print("🔔 Webhook recebido:", dados)
 
-        payment_id = str(dados.get("data", {}).get("id"))
-        if not payment_id:
-            print("❌ ID de pagamento ausente na requisição.")
-            return "ID de pagamento ausente", 400
+        threading.Thread(target=processar_pagamento, args=(dados,)).start()
+        return "OK", 200
 
+    except Exception as e:
+        print(f"❌ Erro interno no webhook: {e}")
+        return "Erro interno", 500
+
+def processar_pagamento(dados):
+    try:
+        payment_id = str(dados.get("data", {}).get("id"))
         chat_id = pagamentos_pendentes.get(payment_id)
         if not chat_id:
             print(f"⚠️ Pagamento não reconhecido: {payment_id}")
-            return "Pagamento não reconhecido", 400
+            return
 
         url = f"https://api.mercadopago.com/v1/payments/{payment_id}"
         headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
         response = requests.get(url, headers=headers)
-
         if response.status_code != 200:
             print(f"❌ Erro ao consultar pagamento: {response.text}")
-            return "Erro ao consultar pagamento", 500
+            return
 
         pagamento = response.json()
         print("📄 Detalhes do pagamento:", pagamento)
@@ -72,11 +76,8 @@ def webhook_pix():
             )
             asyncio.run(bot.send_message(chat_id=chat_id, text=mensagem))
 
-        return "OK", 200
-
     except Exception as e:
-        print(f"❌ Erro interno no webhook: {e}")
-        return "Erro interno", 500
+        print(f"❌ Erro ao processar pagamento: {e}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -109,13 +110,17 @@ async def adquirir(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def processar_escolha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await query.answer(text="Gerando pagamento via PIX...")  # ✅ resposta rápida
 
     chat_id = query.message.chat.id
     escolha = query.data
+    threading.Thread(target=gerar_pagamento_pix, args=(chat_id, escolha)).start()
 
+    await query.edit_message_text("⏳ Processando sua solicitação...")
+
+def gerar_pagamento_pix(chat_id, escolha):
     if escolha not in opcoes_credito:
-        await query.edit_message_text("❌ Opção inválida. Tente novamente.")
+        bot.send_message(chat_id=chat_id, text="❌ Opção inválida. Tente novamente.")
         return
 
     dados = opcoes_credito[escolha]
@@ -153,12 +158,12 @@ async def processar_escolha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     payment_id = str(data.get("id"))
-    print(f"🧾 Pagamento gerado: {payment_id}")
     pagamentos_pendentes[payment_id] = chat_id
 
-    await query.edit_message_text(
-        f"💳 Para adquirir {quantidade} créditos, pague via PIX usando o link abaixo:\n{link}\n\n"
-        "Assim que o pagamento for aprovado, seus créditos serão liberados automaticamente."
+    bot.send_message(
+        chat_id=chat_id,
+        text=f"💳 Para adquirir {quantidade} créditos, pague via PIX usando o link abaixo:\n{link}\n\n"
+             "Assim que o pagamento for aprovado, seus créditos serão liberados automaticamente."
     )
 
 def iniciar_bot():
