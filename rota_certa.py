@@ -11,7 +11,7 @@ import requests, json, asyncio, threading
 
 # 🔐 Tokens
 ACCESS_TOKEN = "APP_USR-264234346131232-071723-2b11d40f943d9721d869863410833122-777482543"  # Substitua pelo seu token do Mercado Pago
-BOT_TOKEN = "8095673432:AAEOd6Sceqa7ClwP36bg7kPlu64fPWSvN2w"  # Substitua pelo seu token do Telegram
+BOT_TOKEN = "8095673432:AAF1aXKsswxlD5MXO8eYalEY51_fNqfSa_o"  # Substitua pelo seu token do Telegram
 # 🧠 Dados locais
 usuarios = {}
 creditos = {}
