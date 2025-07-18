@@ -85,7 +85,7 @@ def adquirir(update: Update, context: CallbackContext):
 
 # 🧵 Rodar Flask e Bot juntos
 def iniciar_bot():
-    updater = Updater(BOT_TOKEN)
+    updater = Updater(token=BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("ajuda", ajuda))
