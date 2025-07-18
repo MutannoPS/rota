@@ -1,12 +1,12 @@
 from flask import Flask, request
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-import requests, json, asyncio
+from waitress import serve
+import requests, json, asyncio, threading
 
 # 🔐 Tokens
 ACCESS_TOKEN = "APP_USR-264234346131232-071723-2b11d40f943d9721d869863410833122-777482543"
 BOT_TOKEN = "7544200568:AAErpB0bVwAcp_YSr_uOGlCVZugQ7O9LTQQ"
-
 
 # 🧠 Dados locais
 usuarios = {}
@@ -17,10 +17,12 @@ pagamentos_pendentes = {}
 app = Flask(__name__)
 bot = Bot(token=BOT_TOKEN)
 
+# ✅ Rota principal
 @app.route("/", methods=["GET"])
 def home():
     return "<h1>Rota Certa Bot está online 🚀</h1>"
 
+# 📩 Webhook do Mercado Pago
 @app.route("/webhook/pix", methods=["POST"])
 def webhook_pix():
     dados = request.json
@@ -96,9 +98,7 @@ def iniciar_bot():
     app_telegram.add_handler(CommandHandler("adquirir", adquirir))
     app_telegram.run_polling()
 
-from waitress import serve
-
+# 🚀 Iniciar tudo com Waitress
 if __name__ == "__main__":
     threading.Thread(target=iniciar_bot).start()
     serve(app, host="0.0.0.0", port=5000)
-
