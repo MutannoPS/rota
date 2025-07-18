@@ -1,12 +1,18 @@
 from flask import Flask, request
-from telegram import Update, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+)
 from waitress import serve
 import requests, json, asyncio, threading
 
 # 🔐 Tokens
 ACCESS_TOKEN = "APP_USR-264234346131232-071723-2b11d40f943d9721d869863410833122-777482543"
 BOT_TOKEN = "7544200568:AAErpB0bVwAcp_YSr_uOGlCVZugQ7O9LTQQ"
+
 # 🧠 Dados locais
 usuarios = {}
 creditos = {}
@@ -76,21 +82,29 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📦 Envie seu romaneio e eu corrijo pra você!\nUse /adquirir para comprar mais créditos.")
 
 async def adquirir(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("30 créditos – R$ 19,90", callback_data="1")],
+        [InlineKeyboardButton("60 créditos – R$ 36,90", callback_data="2")],
+        [InlineKeyboardButton("90 créditos – R$ 51,90", callback_data="3")],
+        [InlineKeyboardButton("120 créditos – R$ 62,90", callback_data="4")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     await update.message.reply_text(
-        "💳 Escolha a quantidade de créditos que deseja adquirir:\n"
-        "1️⃣ 30 créditos por R$ 19,90\n"
-        "2️⃣ 60 créditos por R$ 36,90\n"
-        "3️⃣ 90 créditos por R$ 51,90\n"
-        "4️⃣ 120 créditos por R$ 62,90\n\n"
-        "Digite o número da opção desejada (1, 2, 3 ou 4)."
+        "Ótimo! Você escolheu adquirir créditos. 🌟\n\n"
+        "Escolha uma das opções abaixo e clique para gerar o pagamento via PIX:",
+        reply_markup=reply_markup
     )
 
-async def escolha_credito(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    escolha = update.message.text.strip()
+async def processar_escolha(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = query.message.chat.id
+    escolha = query.data
 
     if escolha not in opcoes_credito:
-        await update.message.reply_text("❌ Opção inválida. Envie 1, 2, 3 ou 4.")
+        await query.edit_message_text("❌ Opção inválida. Tente novamente.")
         return
 
     dados = opcoes_credito[escolha]
@@ -118,8 +132,8 @@ async def escolha_credito(update: Update, context: ContextTypes.DEFAULT_TYPE):
     payment_id = str(data.get("id"))
     pagamentos_pendentes[payment_id] = chat_id
 
-    await update.message.reply_text(
-        f"💳 Para adquirir {quantidade} créditos, pague via PIX usando o link abaixo:\n{link}\n"
+    await query.edit_message_text(
+        f"💳 Para adquirir {quantidade} créditos, pague via PIX usando o link abaixo:\n{link}\n\n"
         "Assim que o pagamento for aprovado, seus créditos serão liberados automaticamente."
     )
 
@@ -132,7 +146,7 @@ def iniciar_bot():
     app_telegram.add_handler(CommandHandler("start", start))
     app_telegram.add_handler(CommandHandler("ajuda", ajuda))
     app_telegram.add_handler(CommandHandler("adquirir", adquirir))
-    app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, escolha_credito))
+    app_telegram.add_handler(CallbackQueryHandler(processar_escolha))
 
     loop.run_until_complete(app_telegram.initialize())
     loop.run_until_complete(app_telegram.start())
