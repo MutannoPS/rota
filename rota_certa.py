@@ -2,13 +2,11 @@ from flask import Flask, request
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from waitress import serve
-import requests, json, asyncio
-import threading
+import requests, json, asyncio, threading
 
 # 🔐 Tokens
 ACCESS_TOKEN = "APP_USR-264234346131232-071723-2b11d40f943d9721d869863410833122-777482543"
 BOT_TOKEN = "7544200568:AAErpB0bVwAcp_YSr_uOGlCVZugQ7O9LTQQ"
-
 # 🧠 Dados locais
 usuarios = {}
 creditos = {}
@@ -91,13 +89,20 @@ async def adquirir(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Assim que o pagamento for aprovado, seu crédito será liberado automaticamente."
     )
 
-# 🧵 Rodar Flask e Bot juntos
+# 🧵 Rodar Flask e Bot juntos com asyncio na thread
 def iniciar_bot():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     app_telegram = ApplicationBuilder().token(BOT_TOKEN).build()
     app_telegram.add_handler(CommandHandler("start", start))
     app_telegram.add_handler(CommandHandler("ajuda", ajuda))
     app_telegram.add_handler(CommandHandler("adquirir", adquirir))
-    app_telegram.run_polling()
+
+    loop.run_until_complete(app_telegram.initialize())
+    loop.run_until_complete(app_telegram.start())
+    loop.run_until_complete(app_telegram.updater.start_polling())
+    loop.run_forever()
 
 # 🚀 Iniciar tudo com Waitress
 if __name__ == "__main__":
