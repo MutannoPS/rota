@@ -16,6 +16,12 @@ pagamentos_pendentes = {}
 app = Flask(__name__)
 bot = Bot(token=BOT_TOKEN)
 
+# ✅ Rota principal para mostrar que o bot está online
+@app.route("/", methods=["GET"])
+def home():
+    return "<h1>Rota Certa Bot está online 🚀</h1>"
+
+# 📩 Rota para receber notificações do Mercado Pago
 @app.route("/webhook/pix", methods=["POST"])
 def webhook_pix():
     dados = request.json
@@ -82,18 +88,6 @@ def adquirir(update: Update, context: CallbackContext):
         f"💳 Para adquirir 1 crédito, pague via PIX usando o link abaixo:\n{link}\n"
         "Assim que o pagamento for aprovado, seu crédito será liberado automaticamente."
     )
-
-from flask import Flask, request
-from telegram import Update, Bot
-from telegram.ext import Updater, CommandHandler
-import threading
-
-app = Flask(__name__)
-
-# ✅ Rota principal para mostrar que o bot está online
-@app.route("/", methods=["GET"])
-def home():
-    return "<h1>Rota Certa Bot está online 🚀</h1>"
 
 # 🧵 Rodar Flask e Bot juntos
 def iniciar_bot():
