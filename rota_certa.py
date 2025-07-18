@@ -96,7 +96,9 @@ def iniciar_bot():
     app_telegram.add_handler(CommandHandler("adquirir", adquirir))
     app_telegram.run_polling()
 
+from waitress import serve
+
 if __name__ == "__main__":
-    import threading
     threading.Thread(target=iniciar_bot).start()
-    app.run(host="0.0.0.0", port=5000)
+    serve(app, host="0.0.0.0", port=5000)
+
