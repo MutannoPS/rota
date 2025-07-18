@@ -10,8 +10,8 @@ from waitress import serve
 import requests, json, asyncio, threading
 
 # 🔐 Tokens
-ACCESS_TOKEN = "APP_USR-264234346131232-071723-2b11d40f943d9721d869863410833122-777482543"
-BOT_TOKEN = "7544200568:AAErpB0bVwAcp_YSr_uOGlCVZugQ7O9LTQQ"
+ACCESS_TOKEN = "APP_USR-264234346131232-071723-2b11d40f943d9721d869863410833122-777482543"  # Substitua pelo seu token do Mercado Pago
+BOT_TOKEN = "8095673432:AAEOd6Sceqa7ClwP36bg7kPlu64fPWSvN2w"  # Substitua pelo seu token do Telegram
 
 # 🧠 Dados locais
 usuarios = {}
@@ -35,36 +35,47 @@ bot = Bot(token=BOT_TOKEN)
 def home():
     return "<h1>Rota Certa Bot está online 🚀</h1>"
 
-# 📩 Webhook do Mercado Pago
+# 📩 Webhook do Mercado Pago com validação
 @app.route("/webhook/pix", methods=["POST"])
 def webhook_pix():
-    dados = request.json
-    payment_id = str(dados.get("data", {}).get("id"))
-    chat_id = pagamentos_pendentes.get(payment_id)
+    try:
+        dados = request.get_json(force=True)
+        payment_id = str(dados.get("data", {}).get("id"))
 
-    if not chat_id:
-        return "Pagamento não reconhecido", 400
+        if not payment_id:
+            print("❌ ID de pagamento ausente na requisição.")
+            return "ID de pagamento ausente", 400
 
-    url = f"https://api.mercadopago.com/v1/payments/{payment_id}"
-    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
-    response = requests.get(url, headers=headers)
+        chat_id = pagamentos_pendentes.get(payment_id)
+        if not chat_id:
+            print(f"⚠️ Pagamento não reconhecido: {payment_id}")
+            return "Pagamento não reconhecido", 400
 
-    if response.status_code != 200:
-        return "Erro ao consultar pagamento", 500
+        url = f"https://api.mercadopago.com/v1/payments/{payment_id}"
+        headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+        response = requests.get(url, headers=headers)
 
-    pagamento = response.json()
-    if pagamento.get("status") == "approved":
-        quantidade = int(pagamento.get("transaction_amount", 0) // 0.66)  # estimativa
-        creditos[str(chat_id)] = creditos.get(str(chat_id), 0) + quantidade
-        nome = usuarios.get(str(chat_id), {}).get("nome", "entregador")
-        mensagem = (
-            f"🎉 Olá {nome}!\n"
-            f"Recebemos seu pagamento e liberamos {quantidade} créditos para você.\n"
-            f"Envie /ajuda para começar a usar o corretor de romaneio!"
-        )
-        asyncio.run(bot.send_message(chat_id=chat_id, text=mensagem))
+        if response.status_code != 200:
+            print(f"❌ Erro ao consultar pagamento: {response.text}")
+            return "Erro ao consultar pagamento", 500
 
-    return "OK", 200
+        pagamento = response.json()
+        if pagamento.get("status") == "approved":
+            quantidade = int(pagamento.get("transaction_amount", 0) // 0.66)  # estimativa
+            creditos[str(chat_id)] = creditos.get(str(chat_id), 0) + quantidade
+            nome = usuarios.get(str(chat_id), {}).get("nome", "entregador")
+            mensagem = (
+                f"🎉 Olá {nome}!\n"
+                f"Recebemos seu pagamento e liberamos {quantidade} créditos para você.\n"
+                f"Envie /ajuda para começar a usar o corretor de romaneio!"
+            )
+            asyncio.run(bot.send_message(chat_id=chat_id, text=mensagem))
+
+        return "OK", 200
+
+    except Exception as e:
+        print(f"❌ Erro interno no webhook: {e}")
+        return "Erro interno", 500
 
 # 🤖 Comandos do bot
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
