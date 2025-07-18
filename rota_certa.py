@@ -83,6 +83,18 @@ def adquirir(update: Update, context: CallbackContext):
         "Assim que o pagamento for aprovado, seu crédito será liberado automaticamente."
     )
 
+from flask import Flask, request
+from telegram import Update, Bot
+from telegram.ext import Updater, CommandHandler
+import threading
+
+app = Flask(__name__)
+
+# ✅ Rota principal para mostrar que o bot está online
+@app.route("/", methods=["GET"])
+def home():
+    return "<h1>Rota Certa Bot está online 🚀</h1>"
+
 # 🧵 Rodar Flask e Bot juntos
 def iniciar_bot():
     updater = Updater(token=BOT_TOKEN, use_context=True)
