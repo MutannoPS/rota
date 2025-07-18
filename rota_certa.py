@@ -1,11 +1,10 @@
 from flask import Flask, request
 from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
-    Dispatcher,
 )
 from waitress import serve
 import requests, json, asyncio, threading, uuid
@@ -31,20 +30,10 @@ opcoes_credito = {
 # 🚀 Flask app
 app = Flask(__name__)
 bot = Bot(token=BOT_TOKEN)
-dispatcher = Dispatcher(bot=bot, update_queue=None, workers=4, loop=asyncio.get_event_loop())
 
 @app.route("/", methods=["GET"])
 def home():
     return "<h1>Rota Certa Bot está online com Webhook 🚀</h1>"
-
-@app.route("/telegram", methods=["POST"])
-def telegram_webhook():
-    try:
-        update = Update.de_json(request.get_json(force=True), bot)
-        dispatcher.process_update(update)
-    except Exception as e:
-        print(f"❌ Erro ao processar update: {e}")
-    return "OK", 200
 
 @app.route("/webhook/pix", methods=["POST"])
 def webhook_pix():
@@ -176,14 +165,16 @@ def gerar_pagamento_pix(chat_id, escolha):
              "Assim que o pagamento for aprovado, seus créditos serão liberados automaticamente."
     )
 
-def configurar_webhook():
-    bot.set_webhook(url=WEBHOOK_URL)
-    print(f"✅ Webhook configurado: {WEBHOOK_URL}")
+# 🔧 Inicializa o bot com webhook
+application = Application.builder().token(BOT_TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("ajuda", ajuda))
+application.add_handler(CommandHandler("adquirir", adquirir))
+application.add_handler(CallbackQueryHandler(processar_escolha))
 
 if __name__ == "__main__":
-    configurar_webhook()
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("ajuda", ajuda))
-    dispatcher.add_handler(CommandHandler("adquirir", adquirir))
-    dispatcher.add_handler(CallbackQueryHandler(processar_escolha))
-    serve(app, host="0.0.0.0", port=5000)
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=5000,
+        webhook_url=WEBHOOK_URL
+    )
