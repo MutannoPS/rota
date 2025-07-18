@@ -1,6 +1,6 @@
 from flask import Flask, request
 from telegram import Update, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from waitress import serve
 import requests, json, asyncio, threading
 
@@ -11,6 +11,14 @@ BOT_TOKEN = "7544200568:AAErpB0bVwAcp_YSr_uOGlCVZugQ7O9LTQQ"
 usuarios = {}
 creditos = {}
 pagamentos_pendentes = {}
+
+# 💳 Opções de crédito
+opcoes_credito = {
+    "1": {"quantidade": 30, "valor": 19.90},
+    "2": {"quantidade": 60, "valor": 36.90},
+    "3": {"quantidade": 90, "valor": 51.90},
+    "4": {"quantidade": 120, "valor": 62.90},
+}
 
 # 🚀 Flask app
 app = Flask(__name__)
@@ -40,11 +48,12 @@ def webhook_pix():
 
     pagamento = response.json()
     if pagamento.get("status") == "approved":
-        creditos[str(chat_id)] = creditos.get(str(chat_id), 0) + 1
+        quantidade = int(pagamento.get("transaction_amount", 0) // 0.66)  # estimativa
+        creditos[str(chat_id)] = creditos.get(str(chat_id), 0) + quantidade
         nome = usuarios.get(str(chat_id), {}).get("nome", "entregador")
         mensagem = (
             f"🎉 Olá {nome}!\n"
-            f"Recebemos seu pagamento e liberamos 1 crédito para você.\n"
+            f"Recebemos seu pagamento e liberamos {quantidade} créditos para você.\n"
             f"Envie /ajuda para começar a usar o corretor de romaneio!"
         )
         asyncio.run(bot.send_message(chat_id=chat_id, text=mensagem))
@@ -67,26 +76,51 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📦 Envie seu romaneio e eu corrijo pra você!\nUse /adquirir para comprar mais créditos.")
 
 async def adquirir(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "💳 Escolha a quantidade de créditos que deseja adquirir:\n"
+        "1️⃣ 30 créditos por R$ 19,90\n"
+        "2️⃣ 60 créditos por R$ 36,90\n"
+        "3️⃣ 90 créditos por R$ 51,90\n"
+        "4️⃣ 120 créditos por R$ 62,90\n\n"
+        "Digite o número da opção desejada (1, 2, 3 ou 4)."
+    )
+
+async def escolha_credito(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    escolha = update.message.text.strip()
+
+    if escolha not in opcoes_credito:
+        await update.message.reply_text("❌ Opção inválida. Envie 1, 2, 3 ou 4.")
+        return
+
+    dados = opcoes_credito[escolha]
+    quantidade = dados["quantidade"]
+    valor = dados["valor"]
+
     url = "https://api.mercadopago.com/v1/payments"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
     payload = {
-        "transaction_amount": 9.90,
-        "description": "Crédito Rota Certa",
+        "transaction_amount": valor,
+        "description": f"{quantidade} créditos Rota Certa",
         "payment_method_id": "pix",
         "payer": {"email": "teste@email.com"}
     }
 
     response = requests.post(url, json=payload, headers=headers)
     data = response.json()
-    link = data.get("point_of_interaction", {}).get("transaction_data", {}).get("ticket_url")
-    payment_id = str(data.get("id"))
 
+    link = (
+        data.get("point_of_interaction", {}).get("transaction_data", {}).get("ticket_url")
+        or data.get("transaction_details", {}).get("external_resource_url")
+        or "⚠️ Link de pagamento não disponível. Tente novamente mais tarde."
+    )
+
+    payment_id = str(data.get("id"))
     pagamentos_pendentes[payment_id] = chat_id
 
     await update.message.reply_text(
-        f"💳 Para adquirir 1 crédito, pague via PIX usando o link abaixo:\n{link}\n"
-        "Assim que o pagamento for aprovado, seu crédito será liberado automaticamente."
+        f"💳 Para adquirir {quantidade} créditos, pague via PIX usando o link abaixo:\n{link}\n"
+        "Assim que o pagamento for aprovado, seus créditos serão liberados automaticamente."
     )
 
 # 🧵 Rodar Flask e Bot juntos com asyncio na thread
@@ -98,6 +132,7 @@ def iniciar_bot():
     app_telegram.add_handler(CommandHandler("start", start))
     app_telegram.add_handler(CommandHandler("ajuda", ajuda))
     app_telegram.add_handler(CommandHandler("adquirir", adquirir))
+    app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, escolha_credito))
 
     loop.run_until_complete(app_telegram.initialize())
     loop.run_until_complete(app_telegram.start())
