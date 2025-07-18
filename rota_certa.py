@@ -11,7 +11,8 @@ import requests, json, asyncio, threading
 
 # 🔐 Tokens
 ACCESS_TOKEN = "APP_USR-264234346131232-071723-2b11d40f943d9721d869863410833122-777482543"  # Substitua pelo seu token do Mercado Pago
-BOT_TOKEN = "8095673432:AAF1aXKsswxlD5MXO8eYalEY51_fNqfSa_o"  # Substitua pelo seu token do Telegram
+BOT_TOKEN = "8095673432:AAEOd6Sceqa7ClwP36bg7kPlu64fPWSvN2w"  # Substitua pelo seu token do Telegram
+
 # 🧠 Dados locais
 usuarios = {}
 creditos = {}
@@ -37,8 +38,9 @@ def home():
 def webhook_pix():
     try:
         dados = request.get_json(force=True)
-        payment_id = str(dados.get("data", {}).get("id"))
+        print("🔔 Webhook recebido:", dados)
 
+        payment_id = str(dados.get("data", {}).get("id"))
         if not payment_id:
             print("❌ ID de pagamento ausente na requisição.")
             return "ID de pagamento ausente", 400
@@ -57,6 +59,8 @@ def webhook_pix():
             return "Erro ao consultar pagamento", 500
 
         pagamento = response.json()
+        print("📄 Detalhes do pagamento:", pagamento)
+
         if pagamento.get("status") == "approved":
             quantidade = int(pagamento.get("transaction_amount", 0) // 0.66)
             creditos[str(chat_id)] = creditos.get(str(chat_id), 0) + quantidade
@@ -146,6 +150,7 @@ async def processar_escolha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     payment_id = str(data.get("id"))
+    print(f"🧾 Pagamento gerado: {payment_id}")
     pagamentos_pendentes[payment_id] = chat_id
 
     await query.edit_message_text(
