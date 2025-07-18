@@ -5,6 +5,7 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
+    Dispatcher,
 )
 from waitress import serve
 import requests, json, asyncio, threading, uuid
@@ -12,6 +13,7 @@ import requests, json, asyncio, threading, uuid
 # 🔐 Tokens
 ACCESS_TOKEN = "APP_USR-264234346131232-071723-2b11d40f943d9721d869863410833122-777482543"
 BOT_TOKEN = "8095673432:AAG8YrbG1J9zUmoz3-u_J1kV6yA9M1Vt8ec"  # Substitua pelo seu token do Telegram
+WEBHOOK_URL = "https://rota-zd11.onrender.com/telegram"  # Substitua pela sua URL pública
 
 # 🧠 Dados locais
 usuarios = {}
@@ -29,20 +31,28 @@ opcoes_credito = {
 # 🚀 Flask app
 app = Flask(__name__)
 bot = Bot(token=BOT_TOKEN)
+dispatcher = Dispatcher(bot=bot, update_queue=None, workers=4, loop=asyncio.get_event_loop())
 
 @app.route("/", methods=["GET"])
 def home():
-    return "<h1>Rota Certa Bot está online 🚀</h1>"
+    return "<h1>Rota Certa Bot está online com Webhook 🚀</h1>"
+
+@app.route("/telegram", methods=["POST"])
+def telegram_webhook():
+    try:
+        update = Update.de_json(request.get_json(force=True), bot)
+        dispatcher.process_update(update)
+    except Exception as e:
+        print(f"❌ Erro ao processar update: {e}")
+    return "OK", 200
 
 @app.route("/webhook/pix", methods=["POST"])
 def webhook_pix():
     try:
         dados = request.get_json(force=True)
         print("🔔 Webhook recebido:", dados)
-
         threading.Thread(target=processar_pagamento, args=(dados,)).start()
         return "OK", 200
-
     except Exception as e:
         print(f"❌ Erro interno no webhook: {e}")
         return "Erro interno", 500
@@ -110,7 +120,7 @@ async def adquirir(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def processar_escolha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer(text="Gerando pagamento via PIX...")  # ✅ resposta rápida
+    await query.answer(text="Gerando pagamento via PIX...")
 
     chat_id = query.message.chat.id
     escolha = query.data
@@ -166,21 +176,14 @@ def gerar_pagamento_pix(chat_id, escolha):
              "Assim que o pagamento for aprovado, seus créditos serão liberados automaticamente."
     )
 
-def iniciar_bot():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    app_telegram = ApplicationBuilder().token(BOT_TOKEN).build()
-    app_telegram.add_handler(CommandHandler("start", start))
-    app_telegram.add_handler(CommandHandler("ajuda", ajuda))
-    app_telegram.add_handler(CommandHandler("adquirir", adquirir))
-    app_telegram.add_handler(CallbackQueryHandler(processar_escolha))
-
-    loop.run_until_complete(app_telegram.initialize())
-    loop.run_until_complete(app_telegram.start())
-    loop.run_until_complete(app_telegram.updater.start_polling())
-    loop.run_forever()
+def configurar_webhook():
+    bot.set_webhook(url=WEBHOOK_URL)
+    print(f"✅ Webhook configurado: {WEBHOOK_URL}")
 
 if __name__ == "__main__":
-    threading.Thread(target=iniciar_bot).start()
+    configurar_webhook()
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("ajuda", ajuda))
+    dispatcher.add_handler(CommandHandler("adquirir", adquirir))
+    dispatcher.add_handler(CallbackQueryHandler(processar_escolha))
     serve(app, host="0.0.0.0", port=5000)
