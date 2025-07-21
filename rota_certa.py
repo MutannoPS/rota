@@ -1,4 +1,4 @@
-from openpyxl import load_workbook, Workbook
+import pandas as pd
 import requests, re, io, os, asyncio
 from datetime import datetime
 from flask import Flask, request
@@ -7,7 +7,6 @@ from telegram.ext import Application, MessageHandler, ContextTypes, filters
 
 TOKEN = os.environ.get("TOKEN", "8095673432:AAGa19vnVQDqxLDz_OSr0wFPQUzH2mh03sA")
 
-# Flask e Telegram apps
 app_web = Flask(__name__)
 app_telegram = Application.builder().token(TOKEN).build()
 
@@ -40,7 +39,7 @@ def formatar_sequence(lista):
 async def tratar_arquivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     hora = datetime.now().hour
     saudacao = "Bom dia ☀️" if hora < 12 else "Boa tarde 🌤️" if hora < 18 else "Boa noite 🌙"
-    await update.message.reply_text(f"{saudacao}\n\n📥 Aprimorando sua planilha... ⏳")
+    await update.message.reply_text(f"{saudacao}\n📥 Aprimorando sua planilha... ⏳")
 
     arquivo = update.message.document
     nome_original = arquivo.file_name
@@ -49,56 +48,33 @@ async def tratar_arquivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     nome_final = f"RotaAtualizada-{data_str}.xlsx"
 
     file_bytes = await (await arquivo.get_file()).download_as_bytearray()
-    wb = load_workbook(io.BytesIO(file_bytes))
-    ws = wb.active
-    headers = [cell.value for cell in ws[1]]
-    dados = []
+    df = pd.read_excel(io.BytesIO(file_bytes))
 
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        linha = dict(zip(headers, row))
-        cep = linha.get("Zipcode/Postal code")
-        endereco = linha.get("Destination Address")
-        if cep and endereco:
-            linha["Destination Address"] = corrigir_endereco(endereco, consultar_logradouro(cep))
-        linha["Endereco Corrigido"] = normalizar_endereco(linha.get("Destination Address", ""))
-        linha["Sequence"] = str(linha.get("Sequence", ""))
-        dados.append(linha)
+    for i, row in df.iterrows():
+        cep, endereco = row.get("Zipcode/Postal code"), row.get("Destination Address")
+        if pd.notna(cep) and pd.notna(endereco):
+            df.at[i, "Destination Address"] = corrigir_endereco(endereco, consultar_logradouro(cep))
 
-    agrupado = {}
-    for item in dados:
-        chave = item["Endereco Corrigido"]
-        if chave not in agrupado:
-            agrupado[chave] = {
-                "Destination Address": item["Destination Address"],
-                "Bairro": item.get("Bairro", ""),
-                "City": item.get("City", ""),
-                "Zipcode/Postal code": item.get("Zipcode/Postal code", ""),
-                "Sequence": []
-            }
-        agrupado[chave]["Sequence"].append(item["Sequence"])
+    df["Endereco Corrigido"] = df["Destination Address"].apply(normalizar_endereco)
+    df["Sequence"] = df["Sequence"].astype(str)
 
-    wb_saida = Workbook()
-    ws_saida = wb_saida.active
-    ws_saida.append(["Sequence", "Destination Address", "Bairro", "City", "Zipcode/Postal code"])
-
-    for valor in agrupado.values():
-        ws_saida.append([
-            formatar_sequence(valor["Sequence"]),
-            valor["Destination Address"],
-            valor["Bairro"],
-            valor["City"],
-            valor["Zipcode/Postal code"]
-        ])
+    agrupado = df.groupby("Endereco Corrigido", as_index=False).agg({
+        "Sequence": lambda x: formatar_sequence(x),
+        "Destination Address": "first",
+        "Bairro": "first",
+        "City": "first",
+        "Zipcode/Postal code": "first"
+    }).drop(columns=["Endereco Corrigido"])
 
     buffer = io.BytesIO()
-    wb_saida.save(buffer)
+    agrupado.to_excel(buffer, index=False)
     buffer.seek(0)
 
     await update.message.reply_document(document=buffer, filename=nome_final)
-    await update.message.reply_text("✅ Planilha atualizada! Boa rota! 🚀")
+    await update.message.reply_text("✅ Planilha atualizada com sucesso! Boa rota! 🚀")
 
 async def mensagem_invalida(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📄 Só consigo trabalhar com arquivos `.xlsx` no momento.\nEnvie sua planilha de rota que eu organizo pra você! 🚚")
+    await update.message.reply_text("📄 Só consigo trabalhar com arquivos `.xlsx`.\nPor favor, envie sua planilha de rota que eu organizo pra você! 📦")
 
 app_telegram.add_handler(MessageHandler(filters.Document.ALL, tratar_arquivo))
 app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mensagem_invalida))
