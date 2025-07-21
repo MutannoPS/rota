@@ -1,6 +1,2 @@
-pandas==2.0.3
-requests
-openpyxl
-flask
-python-telegram-bot==20.6
-gunicorn
+python-telegram-bot==20.8
+openpyxl==3.1.5
