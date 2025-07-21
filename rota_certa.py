@@ -1,97 +1,88 @@
-import pandas as pd
-import requests, re, io, os, asyncio
+import logging
+import openpyxl
+from telegram import Update, InputFile
+from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
+import io
 from datetime import datetime
-from flask import Flask, request
-from telegram import Update
-from telegram.ext import Application, MessageHandler, ContextTypes, filters
+from collections import defaultdict
 
-TOKEN = os.environ.get("TOKEN", "8095673432:AAGa19vnVQDqxLDz_OSr0wFPQUzH2mh03sA")
+# === CONFIGURAÇÕES ===
+TOKEN = "8095673432:AAGa19vnVQDqxLDz_OSr0wFPQUzH2mh03sA"
 
-app_web = Flask(__name__)
-app_telegram = Application.builder().token(TOKEN).build()
+# === LOGGING ===
+logging.basicConfig(level=logging.INFO)
 
-def consultar_logradouro(cep):
-    cep = str(cep).replace("-", "").strip()
-    url = f"https://opencep.com/v1/{cep}"
+# === COMANDO /start ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 Olá! Envie seu arquivo de romaneio (.xlsx) para começar o processamento."
+    )
+
+# === FUNÇÃO PRINCIPAL DE PROCESSAMENTO ===
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        response = requests.get(url)
-        return response.json().get("logradouro") if response.status_code == 200 else None
-    except:
-        return None
+        document = update.message.document
+        if not document.file_name.endswith(".xlsx"):
+            await update.message.reply_text("❌ O arquivo enviado não é uma planilha .xlsx. Envie o romaneio correto.")
+            return
 
-def extrair_numero_complemento(endereco):
-    match = re.search(r"\d.*", endereco)
-    return match.group(0) if match else ""
+        # Baixa o arquivo
+        file = await context.bot.get_file(document.file_id)
+        file_content = await file.download_as_bytearray()
+        wb = openpyxl.load_workbook(filename=io.BytesIO(file_content))
+        ws = wb.active
 
-def corrigir_endereco(endereco, logradouro_api):
-    numero = extrair_numero_complemento(endereco)
-    return f"{logradouro_api}, {numero}".strip(", ") if logradouro_api else endereco
+        # === EXEMPLO DE AGRUPAMENTO POR ENDEREÇO ===
+        end_col = None
+        seq_col = None
 
-def normalizar_endereco(endereco):
-    match = re.match(r"(.+?),\s*(\d+)", endereco)
-    return f"{match.group(1).strip()}, {match.group(2).strip()}" if match else endereco.strip()
+        for idx, cell in enumerate(ws[1]):
+            if cell.value == "Destination Address":
+                end_col = idx
+            elif cell.value == "Sequence":
+                seq_col = idx
 
-def formatar_sequence(lista):
-    itens = sorted(set(lista))
-    texto = ", ".join(itens)
-    return f"{texto}; Total: {len(itens)} pacotes." if len(itens) > 1 else texto
+        if end_col is None or seq_col is None:
+            await update.message.reply_text("❌ A planilha precisa conter as colunas 'Destination Address' e 'Sequence'.")
+            return
 
-async def tratar_arquivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    hora = datetime.now().hour
-    saudacao = "Bom dia ☀️" if hora < 12 else "Boa tarde 🌤️" if hora < 18 else "Boa noite 🌙"
-    await update.message.reply_text(f"{saudacao}\n📥 Aprimorando sua planilha... ⏳")
+        agrupamentos = defaultdict(list)
 
-    arquivo = update.message.document
-    nome_original = arquivo.file_name
-    match = re.search(r"(\d{2}-\d{2}-\d{4})", nome_original)
-    data_str = match.group(1) if match else "data"
-    nome_final = f"RotaAtualizada-{data_str}.xlsx"
+        for row in ws.iter_rows(min_row=2):
+            endereco = row[end_col].value
+            sequencia = row[0].value  # Supondo que a coluna A seja o número do pacote
+            if endereco:
+                chave = endereco.strip().lower()
+                agrupamentos[chave].append(sequencia)
 
-    file_bytes = await (await arquivo.get_file()).download_as_bytearray()
-    df = pd.read_excel(io.BytesIO(file_bytes))
+        for row in ws.iter_rows(min_row=2):
+            endereco = row[end_col].value
+            if endereco:
+                chave = endereco.strip().lower()
+                seqs = agrupamentos[chave]
+                row[seq_col].value = ",".join(map(str, sorted(seqs)))
 
-    for i, row in df.iterrows():
-        cep, endereco = row.get("Zipcode/Postal code"), row.get("Destination Address")
-        if pd.notna(cep) and pd.notna(endereco):
-            df.at[i, "Destination Address"] = corrigir_endereco(endereco, consultar_logradouro(cep))
+        # === SALVANDO E ENVIANDO ===
+        output = io.BytesIO()
+        data = datetime.now().strftime("%d-%m-%Y")
+        nome_saida = f"ROTA-ATUALIZADA-{data}.xlsx"
+        wb.save(output)
+        output.seek(0)
 
-    df["Endereco Corrigido"] = df["Destination Address"].apply(normalizar_endereco)
-    df["Sequence"] = df["Sequence"].astype(str)
+        await update.message.reply_document(
+            document=InputFile(output, filename=nome_saida),
+            caption="✅ Arquivo processado com sucesso!\n\n📩 Para iniciar novamente, envie seu romaneio."
+        )
 
-    agrupado = df.groupby("Endereco Corrigido", as_index=False).agg({
-        "Sequence": lambda x: formatar_sequence(x),
-        "Destination Address": "first",
-        "Bairro": "first",
-        "City": "first",
-        "Zipcode/Postal code": "first"
-    }).drop(columns=["Endereco Corrigido"])
+    except Exception as e:
+        logging.exception("Erro ao processar o arquivo:")
+        await update.message.reply_text("⚠️ Ocorreu um erro durante o processamento. Verifique se o arquivo está correto e tente novamente.")
 
-    buffer = io.BytesIO()
-    agrupado.to_excel(buffer, index=False)
-    buffer.seek(0)
-
-    await update.message.reply_document(document=buffer, filename=nome_final)
-    await update.message.reply_text("✅ Planilha atualizada com sucesso! Boa rota! 🚀")
-
-async def mensagem_invalida(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📄 Só consigo trabalhar com arquivos `.xlsx`.\nPor favor, envie sua planilha de rota que eu organizo pra você! 📦")
-
-app_telegram.add_handler(MessageHandler(filters.Document.ALL, tratar_arquivo))
-app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mensagem_invalida))
-
-@app_web.route(f"/{TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), app_telegram.bot)
-    app_telegram.update.update(update)
-    return "OK", 200
-
-@app_web.route("/")
-def index():
-    return "✅ Bot Rota Certa está online e aguardando planilhas!"
-
-async def iniciar_bot():
-    await app_telegram.bot.set_webhook(f"https://rota-2zrg.onrender.com/{TOKEN}")
-    app_web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
+# === MAIN ===
 if __name__ == "__main__":
-    asyncio.run(iniciar_bot())
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
+
+    app.run_polling()
