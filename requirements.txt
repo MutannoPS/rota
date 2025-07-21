@@ -1,5 +1,5 @@
-python-telegram-bot==22.2
-pandas
-requests
 openpyxl
+requests
+python-telegram-bot==20.6
 flask
+gunicorn
